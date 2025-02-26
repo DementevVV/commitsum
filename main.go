@@ -1,33 +1,9 @@
-// Package main provides a TUI application for summarizing GitHub commits.
+// Package main implements a GitHub commit summarization tool.
 //
-// The application allows users to:
-//   - View today's commits across multiple repositories
-//   - Interactively select repositories of interest
-//   - Generate and copy formatted summaries of selected commits
-//   - Navigate through repositories using keyboard controls
-//
-// Core Features:
-//   - Fetches commits using GitHub CLI (gh) authentication
-//   - Groups commits by repository
-//   - Provides an interactive TUI using Bubble Tea
-//   - Supports clipboard integration for summary copying
-//
-// Usage:
-//
-//	Use keyboard controls:
-//	- Space: Toggle repository selection
-//	- j/↓: Move cursor down
-//	- k/↑: Move cursor up
-//	- Enter: Generate summary
-//	- c: Copy summary to clipboard
-//	- q: Quit application
-//
-// Requirements:
-//   - GitHub CLI (gh) must be installed and authenticated
-//   - Terminal with ANSI color support
-//
-// The application uses the Bubble Tea framework for the terminal user interface
-// and the GitHub API through the gh CLI tool to fetch commit information.
+// CommitSum provides a terminal user interface for viewing, selecting,
+// and summarizing GitHub commits from a specified date. It leverages
+// the GitHub CLI for data retrieval and presents an interactive interface
+// for repository selection and summary generation.
 package main
 
 import (
@@ -43,21 +19,21 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Commit stores repository name and commit message information.
+// Commit represents a repository commit with its message.
+// It contains the repository identifier and the commit message content.
 type Commit struct {
 	Repo    string
 	Message string
 }
 
-// APIResponse represents the GitHub API response format.
-// APIResponse represents the structure of a GitHub API response for commit searches.
-// It contains a list of commit items, where each item includes repository information
-// and commit details. This structure is designed to unmarshal JSON responses from
-// GitHub's search API endpoint.
+// APIResponse represents the structure of GitHub's search API response for commits.
+// It contains a list of commit items, each with associated repository and commit message data.
 //
-// The Items field holds an array of commit search results, each containing:
-//   - Repository information (including the full repository name)
-//   - Commit details (including the commit message)
+// This struct is used for unmarshaling the JSON response from the GitHub API when
+// searching for commits. The JSON tags match the API's response format.
+//
+// Fields:
+//   - Items: An array of commit search results, each containing repository and commit data
 type APIResponse struct {
 	Items []struct {
 		Repository struct {
@@ -69,8 +45,7 @@ type APIResponse struct {
 	} `json:"items"`
 }
 
-// Model holds the application state.
-// model represents the application state for commit summarization.
+// Model represents the application state for commit summarization.
 // It manages repository commits, selection state, and UI display preferences.
 //
 // Fields:
@@ -81,6 +56,8 @@ type APIResponse struct {
 //   - showSummary: Controls visibility of commit summary view
 //   - err: Stores current error state of the application
 //   - copyRequested: Indicates if summary should be copied to system clipboard
+//   - dateInput: Stores user input for date confirmation
+//   - dateConfirmed: Tracks user confirmation of date input
 type model struct {
 	commits       map[string][]Commit
 	repoList      []string
@@ -89,9 +66,10 @@ type model struct {
 	showSummary   bool
 	err           error
 	copyRequested bool
+	dateInput     string
+	dateConfirmed bool
 }
 
-// getGitHubUser retrieves the authenticated GitHub username.
 // getGitHubUser retrieves the currently authenticated GitHub username using the GitHub CLI.
 // It executes the 'gh api user' command and extracts the login name from the response.
 // Returns the username as a string and any error encountered during the process.
@@ -105,28 +83,29 @@ func getGitHubUser() (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// getCommits fetches commits from GitHub API and groups them by repository.
-// getCommits retrieves GitHub commits made by the authenticated user for the current day.
-// It uses the GitHub CLI to fetch commits via the GitHub API, and organizes them by repository.
+// getCommits fetches GitHub commits for a specific date from the authenticated user.
+//
+// The function queries GitHub's API for commits authored by the currently authenticated
+// user on the specified date. It organizes these commits by repository and returns them
+// in a structured format for display and interaction.
+//
+// Parameters:
+//   - date: A string representing the date in "YYYY-MM-DD" format to search commits for
 //
 // Returns:
-//   - map[string][]Commit: A map of repository names to their commits
-//   - []string: A sorted list of repository names that have commits
-//   - error: Any error encountered during the process
+//   - map[string][]Commit: A map where keys are repository names and values are slices of commits
+//   - []string: A sorted list of repository names for consistent display order
+//   - error: Any error encountered during the API request or processing
 //
-// The function performs the following steps:
-//  1. Gets the authenticated GitHub username
-//  2. Searches for commits made today by the user
-//  3. Parses the API response and organizes commits by repository
-//  4. Returns both the commit map and a sorted list of repositories
-func getCommits() (map[string][]Commit, []string, error) {
+// The function depends on the GitHub CLI (gh) being installed and properly authenticated.
+// It uses the GitHub search API with the 'cloak-preview' header to access commit information.
+func getCommits(date string) (map[string][]Commit, []string, error) {
 	ghUser, err := getGitHubUser()
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get GitHub user: %w", err)
 	}
 
-	today := time.Now().Format("2006-01-02")
-	query := fmt.Sprintf("author:%s+committer-date:%s", ghUser, today)
+	query := fmt.Sprintf("author:%s+committer-date:%s", ghUser, date)
 
 	cmd := exec.Command("gh", "api", "/search/commits?q="+query, "--header", "Accept: application/vnd.github.cloak-preview", "--paginate")
 	out, err := cmd.Output()
@@ -155,44 +134,106 @@ func getCommits() (map[string][]Commit, []string, error) {
 	return commitMap, repoList, nil
 }
 
-// initModel initializes the application state.
-// initModel initializes and returns a new model instance with default values.
-// It retrieves commits and repository list data, and initializes an empty selection map.
-// The model is used to track the application state including commit history,
-// available repositories, selected items, and UI display settings.
+// initModel creates and initializes a new application model with default values.
+//
+// This function sets up the initial state for the commit summarization tool,
+// including today's date as the default date input and empty data structures
+// for repository selection and visualization.
+//
+// Returns:
+//   - model: A fully initialized model instance with the following defaults:
+//   - Today's date as the dateInput in YYYY-MM-DD format
+//   - dateConfirmed set to false to show the date selection screen first
+//   - An empty selection map for repositories
+//   - showSummary set to false to start in repository selection view
+//
+// The returned model is ready to be used with the Bubble Tea framework.
 func initModel() model {
-	commits, repoList, err := getCommits()
+	today := time.Now().Format("2006-01-02")
 	return model{
-		commits:     commits,
-		repoList:    repoList,
-		err:         err,
-		selected:    make(map[string]bool),
-		showSummary: false,
+		dateInput:     today,
+		dateConfirmed: false,
+		selected:      make(map[string]bool),
+		showSummary:   false,
 	}
 }
 
-// Init initializes Bubble Tea.
-// Init implements tea.Model interface and initializes the model.
-// Returns a tea.Cmd which in this case is nil as no initial commands are needed.
+// Init implements the Bubble Tea model interface initialization hook.
+// This method is called once when the program starts and provides an
+// opportunity to return initial commands for the Bubble Tea runtime.
+//
+// In this application, no initial commands are needed since the model
+// is fully initialized in the initModel function and starts in the
+// date selection state.
+//
+// Returns:
+//   - tea.Cmd: nil, as no initial commands are required
 func (m model) Init() tea.Cmd {
 	return nil
 }
 
-// Update handles UI interactions and keyboard events.
-// It processes user input and updates the application state accordingly.
+// Update handles all user interactions and state changes in the application.
+// This method processes keyboard input and updates the model state accordingly.
 //
-// Key bindings:
-//   - q: Quit the application
-//   - enter: Switch to summary view
-//   - space: Toggle selection of current repository
-//   - j/down: Move cursor down through repository list
-//   - k/up: Move cursor up through repository list
-//   - c: Copy summary to clipboard (when in summary view)
+// The method handles two main application states:
+//   - Date selection mode: When dateConfirmed is false, user enters the date
+//     to fetch commits for. Validates input format and fetches commits on confirmation.
+//   - Repository selection mode: When dateConfirmed is true, user can navigate the
+//     repository list, select/deselect repos, view summaries, and copy content.
+//
+// Key bindings in date selection mode:
+//   - Enter: Confirms date input, validates format, and fetches commits
+//   - Backspace/Delete: Removes characters from date input
+//   - Runes: Adds typed characters to date input
+//
+// Key bindings in repository selection mode:
+//   - q: Quits the application
+//   - Enter: Shows commit summary
+//   - Space: Toggles selection of current repository
+//   - j/down: Moves cursor down
+//   - k/up: Moves cursor up
+//   - c: Copies summary to clipboard (when summary is shown)
+//
+// Parameters:
+//   - msg: The message to process, typically a keyboard input event
 //
 // Returns:
-//   - tea.Model: Updated application model
-//   - tea.Cmd: Command to be executed by the Bubble Tea framework
+//   - tea.Model: The updated model after processing the message
+//   - tea.Cmd: Any command to be executed by the Bubble Tea framework
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Date selection mode
+	if !m.dateConfirmed {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.Type {
+			case tea.KeyEnter:
+				// Validate date format
+				_, err := time.Parse("2006-01-02", m.dateInput)
+				if err != nil {
+					m.err = fmt.Errorf("invalid date format, please use YYYY-MM-DD")
+					return m, nil
+				}
+
+				// Load commits with selected date
+				m.dateConfirmed = true
+				commits, repoList, err := getCommits(m.dateInput)
+				m.commits = commits
+				m.repoList = repoList
+				m.err = err
+				return m, nil
+
+			case tea.KeyBackspace, tea.KeyDelete:
+				if len(m.dateInput) > 0 {
+					m.dateInput = m.dateInput[:len(m.dateInput)-1]
+				}
+
+			case tea.KeyRunes:
+				m.dateInput += string(msg.Runes)
+			}
+			return m, nil
+		}
+	}
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -222,18 +263,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// generateSummary creates the summary view inside Bubble Tea.
-// generateSummary creates a formatted string containing a summary of today's commits
-// from selected repositories. The summary includes:
-//   - A title header with emoji
-//   - For each selected repository:
-//   - Repository name
-//   - Bullet points listing commit messages
-//   - A footer with available actions
+// generateSummary creates a formatted display string of selected repository commits.
 //
-// If no repositories are selected, it shows a notification message instead.
+// This method generates a stylized text representation of all commits from repositories
+// that have been selected by the user. The output includes:
+//   - A title header indicating these are today's commit summaries
+//   - Repository names styled in cyan
+//   - Commit messages with bullet points and proper indentation
+//   - Footer text with available actions
 //
-// Returns a formatted string containing the complete summary.
+// The method handles the empty selection case by showing a message that no repositories
+// are selected, and includes appropriate navigation instructions in the footer.
+//
+// Returns:
+//   - string: A fully formatted and styled summary of selected repository commits
+//     ready to be displayed in the terminal UI
 func (m model) generateSummary() string {
 	output := titleStyle.Render("📌 Today's Commits Summary") + "\n\n"
 
@@ -257,12 +301,21 @@ func (m model) generateSummary() string {
 	return output
 }
 
-// generatePlainSummary creates a plain text summary of selected repository commits.
-// It formats the output with repository names as headers followed by commit messages
-// as bullet points. Only repositories that are marked as selected in the model
-// will be included in the summary.
+// generatePlainSummary creates an unstyled text summary of selected repository commits.
 //
-// Returns a string containing the formatted commit summary.
+// This method produces a plain text representation of commits from selected repositories,
+// without any terminal styling or color codes. It's primarily used for clipboard operations
+// where ANSI escape sequences would be undesirable.
+//
+// The output includes:
+//   - A simple title indicating these are today's commit summaries
+//   - Repository names in square brackets
+//   - Commit messages with bullet points and consistent indentation
+//   - Proper spacing between repository sections
+//
+// Returns:
+//   - string: An unformatted plain text summary suitable for clipboard use or
+//     pasting into other applications
 func (m model) generatePlainSummary() string {
 	var output strings.Builder
 	output.WriteString("Today's Commits Summary\n\n")
@@ -303,22 +356,37 @@ var (
 	checkedMark   = "●"
 )
 
-// View renders the UI.
-// View renders the terminal user interface for the commit summary tool.
-// It handles multiple display states:
-//   - Error state: Shows error message if any error occurred
-//   - Summary state: Displays the generated commit summary when showSummary is true
-//   - Empty state: Shows message when no commits are found
-//   - Main view: Displays an interactive list of repositories with:
-//   - Checkboxes to select/unselect repositories
-//   - Cursor indicating current selection
-//   - Nested commit messages for selected repositories
-//   - Footer with navigation instructions
+// View renders the current state of the application model as a styled string.
+// This method produces the terminal user interface for the commit summary tool.
 //
-// Returns a styled string representing the complete UI view.
+// The View method handles different application states:
+//   - Error state: Displays error messages when operations fail
+//   - Date selection state: Shows date input field with current value when dateConfirmed is false
+//   - Summary state: Shows formatted commit summary when showSummary is true
+//   - Selection state: Shows repository list with checkboxes and commit details when selected
+//
+// The repository selection view includes:
+//   - A title header
+//   - Repository names with selection checkboxes
+//   - Commit messages for selected repositories
+//   - Navigation and action instructions in the footer
+//
+// When no repositories are found, an appropriate message is displayed.
+//
+// Returns:
+//   - string: A formatted string representing the current UI state,
+//     including all styling and layout elements for terminal display
 func (m model) View() string {
 	if m.err != nil {
-		return fmt.Sprintf("%s\n%s", titleStyle.Render("Error"), m.err.Error())
+		return titleStyle.Render("Error") + "\n" + m.err.Error()
+	}
+
+	if !m.dateConfirmed {
+		s := titleStyle.Render("GitHub Commit Summary") + "\n\n"
+		s += "Enter date for commit summary (YYYY-MM-DD):\n"
+		s += repoStyle.Render(m.dateInput) + "\n\n"
+		s += footerStyle.Render("Press Enter to confirm, or edit date")
+		return s
 	}
 
 	if m.showSummary {
@@ -354,10 +422,17 @@ func (m model) View() string {
 	return s
 }
 
-// main runs the Bubble Tea program.
-// main initializes and starts a new Bubble Tea program using the initModel.
-// If the program encounters an error during execution, it prints the error
-// message to standard output and exits with status code 1.
+// main initializes and runs the commit summarization application.
+//
+// This function creates a new Bubble Tea program with the initial application model,
+// starts the event loop, and handles any initialization errors that may occur.
+//
+// The function follows these steps:
+//  1. Creates a new Bubble Tea program with the default model
+//  2. Starts the program's event loop
+//  3. Handles any errors by displaying them and exiting with a non-zero status code
+//
+// No parameters or return values as this is the program entry point.
 func main() {
 	p := tea.NewProgram(initModel())
 	if err := p.Start(); err != nil {

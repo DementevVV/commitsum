@@ -1,10 +1,11 @@
 # GitHub Commit Summarizer
 
-GitHub Commit Summarizer is a terminal-based user interface (TUI) application for summarizing GitHub commits. It allows users to view, select, and generate formatted summaries of their GitHub commits for the current day. The application is built using the Bubble Tea framework and integrates with the GitHub CLI (gh) for fetching commit information.
+GitHub Commit Summarizer is a terminal-based user interface (TUI) application for summarizing GitHub commits. It allows users to view, select, and generate formatted summaries of their GitHub commits for a specified date. The application is built using the Bubble Tea framework and integrates with the GitHub CLI (gh) for fetching commit information.
 
 ## Features
 
-- View today's commits across multiple repositories
+- Select a specific date for commit summarization (defaults to today)
+- View commits across multiple repositories
 - Interactively select repositories of interest
 - Generate and copy formatted summaries of selected commits
 - Navigate through repositories using keyboard controls
@@ -38,7 +39,17 @@ GitHub Commit Summarizer is a terminal-based user interface (TUI) application fo
 
 ## Usage
 
-Use the following keyboard controls to interact with the application:
+### Date Selection
+
+When you first start the application, you'll be presented with a date input screen:
+
+- The current date is pre-filled by default
+- You can edit the date in YYYY-MM-DD format
+- Press `Enter` to confirm and fetch commits for that date
+
+### Repository Selection and Summary
+
+After selecting a date, use the following keyboard controls to interact with the application:
 
 - `Space`: Toggle repository selection
 - `j` or `↓`: Move cursor down
@@ -65,7 +76,7 @@ When you run the application, you will see a list of repositories with today's c
 
 ### Styles
 
-The application uses the [lipgloss](http://_vscodecontentref_/0) package for styling the UI elements, including titles, repository names, commit messages, cursor, footer, and checkboxes.
+The application uses the [lipgloss](https://github.com/charmbracelet/lipgloss) package for styling the UI elements, including titles, repository names, commit messages, cursor, footer, and checkboxes.
 
 ## Contributing
 
