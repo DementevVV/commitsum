@@ -49,13 +49,13 @@ const (
 	iconDivider    = "─"
 
 	// Progress bar characters (using Unicode block elements).
-	barFull      = "█"
-	barThreeQtr  = "▓"
-	barHalf      = "▒"
-	barQuarter   = "░"
-	barEmpty     = "░"
-	barCapLeft   = "▐"
-	barCapRight  = "▌"
+	barFull     = "█"
+	barThreeQtr = "▓"
+	barHalf     = "▒"
+	barQuarter  = "░"
+	barEmpty    = "░"
+	barCapLeft  = "▐"
+	barCapRight = "▌"
 )
 
 // Styles - modern, cohesive design system.

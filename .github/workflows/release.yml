@@ -26,6 +26,28 @@ jobs:
       - name: Build all
         run: make build-all
 
+      - name: Verify binary formats
+        run: |
+          set -euo pipefail
+          expect() {
+            local file="$1"
+            local want="$2"
+            local got
+            got=$(file "$file")
+            if ! echo "$got" | grep -q "$want"; then
+              echo "Unexpected format for $file"
+              echo "$got"
+              exit 1
+            fi
+          }
+
+          expect "bin/commitsum-darwin-amd64" "Mach-O.*x86_64"
+          expect "bin/commitsum-darwin-arm64" "Mach-O.*arm64"
+          expect "bin/commitsum-linux-amd64" "ELF.*x86-64"
+          expect "bin/commitsum-linux-arm64" "ELF.*aarch64"
+          expect "bin/commitsum-windows-amd64.exe" "PE32\\+"
+          expect "bin/commitsum-windows-arm64.exe" "PE32\\+"
+
       - name: Package artifacts
         run: |
           set -euo pipefail

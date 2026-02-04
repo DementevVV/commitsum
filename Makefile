@@ -31,10 +31,10 @@ build-all: ## Build for all platforms (Linux, macOS, Windows)
 	@echo "🔨 Building for all platforms..."
 	@mkdir -p bin
 	@for platform in $(PLATFORMS); do \
-		GOOS=$${platform%/*} GOARCH=$${platform#*/} \
+		GOOS=$${platform%/*}; GOARCH=$${platform#*/}; \
 		out="bin/$(APP_NAME)-$${platform%/*}-$${platform#*/}"; \
 		if [ "$$GOOS" = "windows" ]; then out="$$out.exe"; fi; \
-		go build $(LDFLAGS) -o $$out $(MAIN_PKG) ; \
+		CGO_ENABLED=0 GOOS=$$GOOS GOARCH=$$GOARCH go build $(LDFLAGS) -o $$out $(MAIN_PKG) ; \
 		echo "✅ Built for $$platform"; \
 	done
 	@echo "✨ All builds complete in ./bin/"
