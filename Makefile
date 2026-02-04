@@ -1,7 +1,7 @@
 # Makefile for commitsum
 # Inspired by modern Go project conventions
 
-.PHONY: help build run clean deps fmt lint install uninstall build-all
+.PHONY: help build run clean deps fmt lint install uninstall build-all release-tag
 
 # Default target
 .DEFAULT_GOAL := help
@@ -14,7 +14,7 @@ BUILD_TIME := $(shell date -u '+%Y-%m-%d_%H:%M:%S')
 LDFLAGS := -ldflags "-X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TIME)"
 
 # Build targets for multiple platforms
-PLATFORMS := darwin/amd64 darwin/arm64 linux/amd64 linux/arm64
+PLATFORMS := darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64 windows/arm64
 
 help: ## Show this help message
 	@echo '📊 GitHub Commit Summarizer - Available commands:'
@@ -31,7 +31,10 @@ build-all: ## Build for all platforms (Linux, macOS, Windows)
 	@echo "🔨 Building for all platforms..."
 	@mkdir -p bin
 	@for platform in $(PLATFORMS); do \
-		GOOS=$${platform%/*} GOARCH=$${platform#*/} go build $(LDFLAGS) -o bin/$(APP_NAME)-$${platform%/*}-$${platform#*/} $(MAIN_PKG) ; \
+		GOOS=$${platform%/*} GOARCH=$${platform#*/} \
+		out="bin/$(APP_NAME)-$${platform%/*}-$${platform#*/}"; \
+		if [ "$$GOOS" = "windows" ]; then out="$$out.exe"; fi; \
+		go build $(LDFLAGS) -o $$out $(MAIN_PKG) ; \
 		echo "✅ Built for $$platform"; \
 	done
 	@echo "✨ All builds complete in ./bin/"
@@ -84,5 +87,20 @@ dev: ## Run with auto-reload (requires air)
 	@which air > /dev/null || (echo "Installing air..." && go install github.com/cosmtrek/air@latest)
 	@air
 
-release: clean lint test build-all ## Prepare a release (clean, lint, test, build all)
-	@echo "🎉 Release build complete!"
+release: ## Create and push a release tag (triggers GitHub Actions)
+	@read -p "Release tag (vX.Y.Z): " tag; \
+	if ! echo $$tag | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$$' > /dev/null; then \
+		echo "❌ Invalid tag format. Use vX.Y.Z (e.g., v1.2.3)"; \
+		exit 1; \
+	fi; \
+	if [ ! -f CHANGELOG.md ]; then \
+		echo "❌ CHANGELOG.md not found. Create it and add a section for $$tag."; \
+		exit 1; \
+	fi; \
+	if ! grep -Eq "^(##[[:space:]]*)?$$tag$$" CHANGELOG.md; then \
+		echo "❌ CHANGELOG.md missing section for $$tag. Add a heading like '## $$tag'."; \
+		exit 1; \
+	fi; \
+	git tag -a $$tag -m "Release $$tag"; \
+	git push origin $$tag; \
+	echo "✅ Pushed tag $$tag. GitHub Actions will build and publish the release."

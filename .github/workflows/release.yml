@@ -1,0 +1,74 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build all
+        run: make build-all
+
+      - name: Package artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for file in bin/commitsum-*; do
+            base=$(basename "$file")
+            if [[ "$base" == *.exe ]]; then
+              zip -j "dist/${base}.zip" "$file"
+            else
+              tar -czf "dist/${base}.tar.gz" -C bin "$base"
+            fi
+          done
+
+      - name: Generate release notes
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if [ ! -f CHANGELOG.md ]; then
+            echo "CHANGELOG.md not found"
+            exit 1
+          fi
+
+          section=$(awk -v tag="$tag" '
+            BEGIN { in_section=0; found=0 }
+            {
+              line=$0
+              gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+            }
+            line == tag || line == "## " tag || line == "##" tag || line == "##\t" tag { in_section=1; found=1; next }
+            in_section && line ~ "^(##[[:space:]]*)?v?[0-9]+\\.[0-9]+\\.[0-9]+$" { exit }
+            in_section { print }
+            END { if (!found) exit 2 }
+          ' CHANGELOG.md)
+
+          if [ -z "$section" ]; then
+            echo "Empty changelog section for $tag"
+            exit 1
+          fi
+
+          printf "Changelog\n\n%s\n\n%s\n" "$tag" "$section" > release-notes.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release-notes.txt
+          files: dist/*
