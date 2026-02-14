@@ -39,38 +39,76 @@ case "$ARCH" in
   *) fail "Unsupported architecture: $ARCH" ;;
 esac
 
-ASSET="${APP}-${OS}-${ARCH}.tar.gz"
-
 API_URL="https://api.github.com/repos/${REPO}/releases/latest"
-TAG="$(curl -fsSL "$API_URL" | awk -F '\"' '/\"tag_name\":/ {print $4; exit}')"
+RELEASE_JSON="$(curl -fsSL "$API_URL")"
+TAG="$(printf "%s" "$RELEASE_JSON" | awk -F '\"' '/\"tag_name\":/ {print $4; exit}')"
 [ -n "$TAG" ] || fail "Unable to determine latest release tag"
+
+asset_exists() {
+  printf "%s" "$RELEASE_JSON" | grep -q "\"name\": \"$1\""
+}
+
+ASSET_PRIMARY="${APP}-${OS}-${ARCH}.tar.gz"
+ASSET_FALLBACK=""
+
+if [ "$OS" = "darwin" ] && [ "$ARCH" = "arm64" ]; then
+  ASSET_FALLBACK="${APP}-darwin-amd64.tar.gz"
+fi
+
+ASSET="$ASSET_PRIMARY"
+if ! asset_exists "$ASSET_PRIMARY"; then
+  if [ -n "$ASSET_FALLBACK" ] && asset_exists "$ASSET_FALLBACK"; then
+    ASSET="$ASSET_FALLBACK"
+    say "Asset ${ASSET_PRIMARY} not found in ${TAG}; using ${ASSET_FALLBACK}."
+  else
+    AVAILABLE_ASSETS="$(printf "%s" "$RELEASE_JSON" | sed -n 's/.*"name": "\([^"]*\)".*/\1/p' | grep "^${APP}-" | tr '\n' ' ')"
+    fail "No installer asset for ${OS}/${ARCH} in ${TAG}. Available: ${AVAILABLE_ASSETS}"
+  fi
+fi
 
 BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
 TMP_DIR="$(mktemp -d)"
 ARCHIVE="${TMP_DIR}/${ASSET}"
 CHECKSUMS="${TMP_DIR}/checksums.txt"
+BIN_NAME="${ASSET%.tar.gz}"
 
 say "Downloading ${ASSET} for ${OS}/${ARCH} (${TAG})..."
 curl -fsSL -o "$ARCHIVE" "${BASE_URL}/${ASSET}"
-curl -fsSL -o "$CHECKSUMS" "${BASE_URL}/checksums.txt"
+
+EXPECTED=""
+if curl -fsSL -o "$CHECKSUMS" "${BASE_URL}/checksums.txt" 2>/dev/null; then
+  EXPECTED="$(grep " ${ASSET}\$" "$CHECKSUMS" | awk '{print $1}')"
+else
+  say "checksums.txt not found in release; using GitHub API digest."
+fi
+
+if [ -z "$EXPECTED" ]; then
+  EXPECTED="$(printf "%s" "$RELEASE_JSON" | awk -v asset="$ASSET" '
+    $0 ~ "\"name\": \"" asset "\"" { in_asset=1; next }
+    in_asset && /"digest":/ {
+      gsub(/[", ]/, "", $2)
+      sub(/^sha256:/, "", $2)
+      print $2
+      exit
+    }
+    in_asset && /"name":/ { in_asset=0 }
+  ')"
+fi
+
+[ -n "$EXPECTED" ] || fail "Checksum not found for ${ASSET}"
 
 if command -v sha256sum >/dev/null 2>&1; then
-  CHECK_CMD="sha256sum"
+  ACTUAL="$(sha256sum "$ARCHIVE" | awk '{print $1}')"
 elif command -v shasum >/dev/null 2>&1; then
-  CHECK_CMD="shasum -a 256"
+  ACTUAL="$(shasum -a 256 "$ARCHIVE" | awk '{print $1}')"
 else
   fail "Missing sha256 checker (sha256sum or shasum)"
 fi
-
-EXPECTED="$(grep " ${ASSET}\$" "$CHECKSUMS" | awk '{print $1}')"
-[ -n "$EXPECTED" ] || fail "Checksum not found for ${ASSET}"
-
-ACTUAL="$(eval "$CHECK_CMD" "$ARCHIVE" | awk '{print $1}')"
 [ "$EXPECTED" = "$ACTUAL" ] || fail "Checksum mismatch for ${ASSET}"
 
 tar -xzf "$ARCHIVE" -C "$TMP_DIR"
 
-BIN_PATH="${TMP_DIR}/${APP}-${OS}-${ARCH}"
+BIN_PATH="${TMP_DIR}/${BIN_NAME}"
 [ -f "$BIN_PATH" ] || fail "Binary not found in archive"
 
 INSTALL_DIR="${HOME}/.local/bin"
