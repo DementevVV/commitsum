@@ -60,6 +60,13 @@ jobs:
               tar -czf "dist/${base}.tar.gz" -C bin "$base"
             fi
           done
+          (
+            cd dist
+            for f in *; do
+              [ "$f" = "checksums.txt" ] && continue
+              sha256sum "$f"
+            done
+          ) > dist/checksums.txt
 
       - name: Generate release notes
         run: |

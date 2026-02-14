@@ -8,6 +8,12 @@
 
 Commitsum turns your GitHub commits into a clean, shareable summary in seconds. It’s a beautiful Go-powered CLI with a modern Bubble Tea TUI, plus local caching and detailed logs so you can move fast and troubleshoot quickly.
 
+## 🎬 Demo
+
+See the complete keyboard-driven flow: date selection → repo selection/filtering → summary → export.
+
+![Commitsum Demo](docs/images/commitsum-demo.gif)
+
 ---
 
 ## ✨ Features
@@ -40,6 +46,18 @@ Commitsum turns your GitHub commits into a clean, shareable summary in seconds. 
 Download the appropriate archive for your OS/CPU from the GitHub Releases page and extract it:
 
 https://github.com/DementevVV/commitsum/releases
+
+#### Option 1b: One-line install (macOS/Linux)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/DementevVV/commitsum/master/install.sh | sh
+```
+
+#### Option 1c: One-line install (Windows PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/DementevVV/commitsum/master/install.ps1 | iex
+```
 
 #### Option 2: Build from source
 
